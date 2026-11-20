@@ -227,3 +227,14 @@ func (a *Agent) GetStatistics() map[string]subscraping.Statistics {
 	}
 	return stats
 }
+
+// SourceNames returns the names of the sources this agent was configured to
+// run, sorted for deterministic diff snapshots.
+func (a *Agent) SourceNames() []string {
+	names := make([]string, 0, len(a.sources))
+	for _, source := range a.sources {
+		names = append(names, source.Name())
+	}
+	sort.Strings(names)
+	return names
+}

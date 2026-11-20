@@ -79,6 +79,21 @@ type Options struct {
 	// bodies. A value of 0 (default) means no limit. When set, oversized bodies
 	// are truncated to protect against unbounded memory use.
 	MaxResponseBodySize int `yaml:"response-size-read,omitempty"`
+
+	// Diff enables cycle-over-cycle incremental output. When false (the
+	// default) enumeration behaves exactly as before and no diff files are
+	// created anywhere.
+	Diff bool `yaml:"diff,omitempty"`
+	// DiffDir is the root of the persisted cycle history. Snapshots and
+	// delta reports are written under <DiffDir>/<domain>/.
+	DiffDir string `yaml:"diff-dir,omitempty"`
+	// DiffCycle overrides the automatic ISO-year-week cycle identifier. It
+	// lets scheduled jobs pin a cycle explicitly; empty means auto-derive.
+	DiffCycle string `yaml:"diff-cycle,omitempty"`
+	// DiffOutput additionally writes the delta report to this path. When
+	// empty, reports are persisted only inside DiffDir and summarized in the
+	// standard log output.
+	DiffOutput string `yaml:"diff-output,omitempty"`
 }
 
 // OnResultCallback (hostResult)
@@ -156,6 +171,13 @@ func ParseOptions() *Options {
 		flagSet.IntVar(&options.Timeout, "timeout", 30, "seconds to wait before timing out"),
 		flagSet.IntVar(&options.MaxEnumerationTime, "max-time", 10, "minutes to wait for enumeration results"),
 		flagSet.IntVarP(&options.MaxResponseBodySize, "response-size-read", "rsr", 0, "max response body size to read in bytes from passive sources (0 = unlimited)"),
+	)
+
+	flagSet.CreateGroup("diff", "Incremental diff",
+		flagSet.BoolVarP(&options.Diff, "diff", "df", false, "enable cycle-over-cycle incremental output (new/disappeared/persistent/recovered/uncertain)"),
+		flagSet.StringVarP(&options.DiffDir, "diff-dir", "dfd", filepath.Join(configDir, "diff"), "directory for persisted cycle snapshots and delta reports"),
+		flagSet.StringVarP(&options.DiffCycle, "diff-cycle", "dfc", "", "override the auto-derived cycle id (default: ISO year-week, e.g. 2026-W47)"),
+		flagSet.StringVarP(&options.DiffOutput, "diff-output", "dfo", "", "optional path to also write this cycle's delta report"),
 	)
 
 	if err := flagSet.Parse(); err != nil {

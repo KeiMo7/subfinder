@@ -14,6 +14,7 @@ import (
 
 	"github.com/projectdiscovery/gologger"
 
+	"github.com/projectdiscovery/subfinder/v2/pkg/diff"
 	"github.com/projectdiscovery/subfinder/v2/pkg/passive"
 	"github.com/projectdiscovery/subfinder/v2/pkg/resolve"
 	"github.com/projectdiscovery/subfinder/v2/pkg/subscraping"
@@ -140,6 +141,12 @@ func (r *Runner) EnumerateSingleDomainWithCtx(ctx context.Context, domain string
 	// If the user asked to remove wildcards, listen from the results
 	// queue and write to the map. At the end, print the found results to the screen
 	foundResults := make(map[string]resolve.Result)
+	// resolvedStatus records per-host resolution for the optional diff
+	// snapshot. It stays nil in passive mode, where resolution is unknown.
+	var resolvedStatus map[string]diff.HostStatus
+	if r.options.RemoveWildcard && r.options.Diff {
+		resolvedStatus = make(map[string]diff.HostStatus)
+	}
 	if r.options.RemoveWildcard {
 		// Process the results coming from the resolutions pool
 		for result := range resolutionPool.Results {
@@ -150,9 +157,22 @@ func (r *Runner) EnumerateSingleDomainWithCtx(ctx context.Context, domain string
 				// Add the found subdomain to a map.
 				if _, ok := foundResults[result.Host]; !ok {
 					foundResults[result.Host] = result
+					if resolvedStatus != nil {
+						resolvedStatus[result.Host] = diff.StatusResolved
+					}
 					if r.options.ResultCallback != nil {
 						r.options.ResultCallback(&resolve.HostEntry{Domain: domain, Host: result.Host, Source: result.Source, WildcardCertificate: result.WildcardCertificate})
 					}
+				}
+			}
+		}
+		// Hosts that reached the resolver but never produced a Subdomain
+		// result did not resolve. Record that explicitly so a later cycle's
+		// resolution change is detectable instead of being dropped.
+		if resolvedStatus != nil {
+			for host := range uniqueMap {
+				if _, ok := resolvedStatus[host]; !ok {
+					resolvedStatus[host] = diff.StatusUnresolved
 				}
 			}
 		}
@@ -251,6 +271,13 @@ func (r *Runner) EnumerateSingleDomainWithCtx(ctx context.Context, domain string
 	}
 
 	gologger.Info().Msgf("Found %d subdomains for %s in %s\n", numberOfSubDomains, domain, duration)
+
+	// Optional cycle-over-cycle delta. Entirely opt-in and best-effort: it
+	// runs after the standard output has been written and can never change
+	// the enumeration result or exit code.
+	if r.options.Diff {
+		r.runDiff(domain, sourceMap, resolvedStatus)
+	}
 
 	if r.options.Statistics {
 		gologger.Info().Msgf("Printing source statistics for %s", domain)
